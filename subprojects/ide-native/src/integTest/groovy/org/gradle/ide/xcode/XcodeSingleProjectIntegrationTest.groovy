@@ -16,6 +16,7 @@
 
 package org.gradle.ide.xcode
 
+import org.gradle.ide.xcode.fixtures.XcodeProjectPackage
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.nativeplatform.fixtures.app.SwiftHelloWorldApp
 
@@ -39,8 +40,12 @@ rootProject.name = "app"
         succeeds("xcode")
 
         then:
-        executedAndNotSkipped("xcode")
-        file("test.xcodeproj").assertIsDir()
-        file("test.xcodeproj/project.pbxproj").assertIsFile()
+        executedAndNotSkipped(":pbxProject", ":xcode")
+        xcodeProject("app.xcodeproj").projectFile.mainGroup.children.size() == 5
+
+    }
+
+    private XcodeProjectPackage xcodeProject(String path) {
+        new XcodeProjectPackage(file(path))
     }
 }
