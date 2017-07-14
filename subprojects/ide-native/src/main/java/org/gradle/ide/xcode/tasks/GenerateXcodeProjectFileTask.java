@@ -19,13 +19,16 @@ package org.gradle.ide.xcode.tasks;
 import com.dd.plist.NSDictionary;
 import com.facebook.buck.apple.xcode.GidGenerator;
 import com.facebook.buck.apple.xcode.XcodeprojSerializer;
+import com.facebook.buck.apple.xcode.xcodeproj.PBXBuildFile;
 import com.facebook.buck.apple.xcode.xcodeproj.PBXFileReference;
+import com.facebook.buck.apple.xcode.xcodeproj.PBXLegacyTarget;
 import com.facebook.buck.apple.xcode.xcodeproj.PBXNativeTarget;
 import com.facebook.buck.apple.xcode.xcodeproj.PBXProject;
 import com.facebook.buck.apple.xcode.xcodeproj.PBXReference;
-import com.facebook.buck.apple.xcode.xcodeproj.PBXShellScriptBuildPhase;
+import com.facebook.buck.apple.xcode.xcodeproj.PBXSourcesBuildPhase;
 import com.facebook.buck.apple.xcode.xcodeproj.PBXTarget;
 import com.facebook.buck.apple.xcode.xcodeproj.XCBuildConfiguration;
+import com.google.common.base.Optional;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.ConfigurableFileTree;
 import org.gradle.api.tasks.TaskAction;
@@ -37,7 +40,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 
 public class GenerateXcodeProjectFileTask extends DefaultTask {
     @TaskAction
@@ -52,16 +57,25 @@ public class GenerateXcodeProjectFileTask extends DefaultTask {
 
 
         ConfigurableFileTree sources = getProject().fileTree("src/main/swift");
+        List<PBXReference> fileReferences = new ArrayList<PBXReference>();
         for (File source : sources.getFiles()) {
-            project.getMainGroup().getChildren().add(new PBXFileReference(source.getName(), source.getAbsolutePath(), PBXReference.SourceTree.ABSOLUTE));
+            PBXFileReference fileReference = new PBXFileReference(source.getName(), source.getAbsolutePath(), PBXReference.SourceTree.ABSOLUTE);
+            fileReferences.add(fileReference);
+            project.getMainGroup().getChildren().add(fileReference);
         }
         if (getProject().getBuildFile().exists()) {
             project.getMainGroup().getChildren().add(new PBXFileReference(getProject().getBuildFile().getName(), getProject().getBuildFile().getAbsolutePath(), PBXReference.SourceTree.ABSOLUTE));
         }
 
         // TODO - create a target per component
-        project.getTargets().add(createTarget("target11", getProject().getName(), ":linkMain", "build/exe"));
+        PBXTarget index_target11 = createIndexingTarget("[indexing] DO NOT BUILD target11", getProject().getName(), fileReferences);
+        project.getTargets().add(index_target11);
+        PBXTarget target11 = createTarget("target11", getProject().getName(), ":linkMain");
+        project.getTargets().add(target11);
 
+        PBXFileReference f = new PBXFileReference(getProject().getName(), getProject().file("build/exe/app").getAbsolutePath(), PBXReference.SourceTree.ABSOLUTE);
+        f.setExplicitFileType(Optional.of("compiled.mach-o.executable"));
+        project.getMainGroup().getOrCreateChildGroupByName("Products").getChildren().add(f);
 
         // Serialize the model
         // TODO - Write the pipeworks to use GeneratorTask
@@ -84,24 +98,310 @@ public class GenerateXcodeProjectFileTask extends DefaultTask {
         } catch (IOException e) {
             throw UncheckedException.throwAsUncheckedException(e);
         }
+
+        new File(xcodeprojDir, "xcshareddata/xcschemes").mkdirs();
+        try {
+            Writer writer = new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(new File(xcodeprojDir, "xcshareddata/xcschemes/target11.xcscheme"))), "UTF-8");
+            try {
+                String content = targetXcshemeContentNotIndex("target11", target11.getGlobalID(), getProject().getName() + ".xcodeproj", getProject().file("build/exe/app").getAbsolutePath());
+                writer.write(content);
+                writer.flush();
+            } finally {
+                writer.close();
+            }
+        } catch (IOException e) {
+            throw UncheckedException.throwAsUncheckedException(e);
+        }
+
+        try {
+            Writer writer = new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(new File(xcodeprojDir, "xcshareddata/xcschemes/[indexing] DO NOT BUILD target11.xcscheme"))), "UTF-8");
+            try {
+                String content = targetXcshemeContent("[indexing] DO NOT BUILD target11", index_target11.getGlobalID(), getProject().getName() + "xcodeproj", "");
+                writer.write(content);
+                writer.flush();
+            } finally {
+                writer.close();
+            }
+        } catch (IOException e) {
+            throw UncheckedException.throwAsUncheckedException(e);
+        }
+
+        try {
+            Writer writer = new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(new File(xcodeprojDir, "xcshareddata/xcschemes/xcschememanagement.plist"))), "UTF-8");
+            try {
+                String content = targetman(target11.getGlobalID(), index_target11.getGlobalID());
+                writer.write(content);
+                writer.flush();
+            } finally {
+                writer.close();
+            }
+        } catch (IOException e) {
+            throw UncheckedException.throwAsUncheckedException(e);
+        }
+
+        File workspaceSettingsFile = new File(xcodeprojDir, "project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings");
+        workspaceSettingsFile.getParentFile().mkdirs();
+        try {
+            Writer writer = new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(workspaceSettingsFile)), "UTF-8");
+            try {
+                String content = work();
+                writer.write(content);
+                writer.flush();
+            } finally {
+                writer.close();
+            }
+        } catch (IOException e) {
+            throw UncheckedException.throwAsUncheckedException(e);
+        }
+
+        File usersettingFile = new File(xcodeprojDir, "xcuserdata/" + System.getProperty("user.name") + ".xcuserdatad/xcschemes/xcschememanagement.plist");
+        usersettingFile.getParentFile().mkdirs();
+        try {
+            Writer writer = new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(usersettingFile)), "UTF-8");
+            try {
+                String content = usertargetman(target11.getGlobalID(), index_target11.getGlobalID());
+                writer.write(content);
+                writer.flush();
+            } finally {
+                writer.close();
+            }
+        } catch (IOException e) {
+            throw UncheckedException.throwAsUncheckedException(e);
+        }
     }
 
-    private PBXShellScriptBuildPhase createBuildPhase(String taskName) {
-        PBXShellScriptBuildPhase gradleBuildPhase = new PBXShellScriptBuildPhase();
-        // TODO - Validate we can't put space in a shebang https://lists.gnu.org/archive/html/bug-bash/2008-05/msg00051.html
-        gradleBuildPhase.setShellPath("/bin/bash");
-        // TODO - Use the right task to build the binary only
-        String shellScript = "";
-        // TODO - allow to modify the location of gradlew/gradle through task input
-        if (getProject().file("gradlew").exists()) {
-            shellScript += "exec \"" + getProject().file("gradlew").getAbsolutePath() + "\" " + taskName;
-        } else {
-            // TODO - default to gradle on the path (or should we generate an error if no gradle is in the path?)
-            shellScript += "exec \"~/gradle/gradle-source-build/bin/gradle\" " + taskName;
-        }
-        gradleBuildPhase.setShellScript(shellScript);
+    private String work() {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n" +
+            "<plist version=\"1.0\">\n" +
+            "<dict>\n" +
+            "\t<key>IDEWorkspaceSharedSettings_AutocreateContextsIfNeeded</key>\n" +
+            "\t<false/>\n" +
+            "</dict>\n" +
+            "</plist>";
+    }
 
-        return gradleBuildPhase;
+    private String usertargetman(String id, String id_index) {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n" +
+            "<plist version=\"1.0\">\n" +
+            "<dict>\n" +
+            "\t<key>SchemeUserState</key>\n" +
+            "\t<dict>\n" +
+            "\t\t<key>[indexing] DO NOT BUILD target11.xcscheme_^#shared#^_</key>\n" +
+            "\t\t<dict>\n" +
+            "\t\t\t<key>isShown</key>\n" +
+            "\t\t\t<false/>\n" +
+            "\t\t</dict>\n" +
+            "\t</dict>\n" +
+            "\t<key>SuppressBuildableAutocreation</key>\n" +
+            "\t<dict>\n" +
+            "\t\t<key>" + id + "</key>\n" +
+            "\t\t<dict>\n" +
+            "\t\t\t<key>primary</key>\n" +
+            "\t\t\t<true/>\n" +
+            "\t\t</dict>\n" +
+            "\t\t<key>" + id_index + "</key>\n" +
+            "\t\t<dict>\n" +
+            "\t\t\t<key>primary</key>\n" +
+            "\t\t\t<true/>\n" +
+            "\t\t</dict>\n" +
+            "\t</dict>\n" +
+            "</dict>\n" +
+            "</plist>";
+    }
+
+    private String targetman(String id, String id_index) {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n" +
+            "<plist version=\"1.0\">\n" +
+            "<dict>\n" +
+            "\t<key>SchemeUserState</key>\n" +
+            "\t<dict>\n" +
+            "\t\t<key>[indexing] DO NOT BUILD target11.xcscheme</key>\n" +
+            "\t\t<dict>\n" +
+            "\t\t\t<key>isShown</key>\n" +
+            "\t\t\t<false/>\n" +
+            "\t\t\t<key>orderHint</key>\n" +
+            "\t\t\t<integer>1</integer>\n" +
+            "\t\t</dict>\n" +
+            "\t\t<key>target11.xcscheme</key>\n" +
+            "\t\t<dict>\n" +
+            "\t\t\t<key>orderHint</key>\n" +
+            "\t\t\t<integer>0</integer>\n" +
+            "\t\t</dict>\n" +
+            "\t</dict>\n" +
+            "\t<key>SuppressBuildableAutocreation</key>\n" +
+            "\t<dict>\n" +
+            "\t\t<key>" + id + "</key>\n" +
+            "\t\t<dict>\n" +
+            "\t\t\t<key>primary</key>\n" +
+            "\t\t\t<true/>\n" +
+            "\t\t</dict>\n" +
+            "\t\t<key>" + id_index + "</key>\n" +
+            "\t\t<dict>\n" +
+            "\t\t\t<key>primary</key>\n" +
+            "\t\t\t<true/>\n" +
+            "\t\t</dict>\n" +
+            "\t</dict>\n" +
+            "</dict>\n" +
+            "</plist>";
+    }
+
+    private String targetXcshemeContentNotIndex(String targetName, String id, String projectFilename, String executablePath) {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            "<Scheme\n" +
+            "   LastUpgradeVersion = \"0830\"\n" +
+            "   version = \"1.3\">\n" +
+            "   <BuildAction\n" +
+            "      parallelizeBuildables = \"YES\"\n" +
+            "      buildImplicitDependencies = \"YES\">\n" +
+            "      <BuildActionEntries>\n" +
+            "         <BuildActionEntry\n" +
+            "            buildForTesting = \"YES\"\n" +
+            "            buildForRunning = \"YES\"\n" +
+            "            buildForProfiling = \"YES\"\n" +
+            "            buildForArchiving = \"YES\"\n" +
+            "            buildForAnalyzing = \"YES\">\n" +
+            "            <BuildableReference\n" +
+            "               BuildableIdentifier = \"primary\"\n" +
+            "               BlueprintIdentifier = \"" + id + "\"\n" +
+            "               BuildableName = \"" + targetName + "\"\n" +
+            "               BlueprintName = \"" + targetName + "\"\n" +
+            "               ReferencedContainer = \"container:" + projectFilename + "\">\n" +
+            "            </BuildableReference>\n" +
+            "         </BuildActionEntry>\n" +
+            "      </BuildActionEntries>\n" +
+            "   </BuildAction>\n" +
+            "   <TestAction\n" +
+            "      buildConfiguration = \"Debug\"\n" +
+            "      selectedDebuggerIdentifier = \"Xcode.DebuggerFoundation.Debugger.LLDB\"\n" +
+            "      selectedLauncherIdentifier = \"Xcode.DebuggerFoundation.Launcher.LLDB\"\n" +
+            "      shouldUseLaunchSchemeArgsEnv = \"YES\">\n" +
+            "      <Testables>\n" +
+            "      </Testables>\n" +
+            "      <AdditionalOptions>\n" +
+            "      </AdditionalOptions>\n" +
+            "   </TestAction>\n" +
+            "   <LaunchAction\n" +
+            "      buildConfiguration = \"Debug\"\n" +
+            "      selectedDebuggerIdentifier = \"Xcode.DebuggerFoundation.Debugger.LLDB\"\n" +
+            "      selectedLauncherIdentifier = \"Xcode.DebuggerFoundation.Launcher.LLDB\"\n" +
+            "      launchStyle = \"0\"\n" +
+            "      useCustomWorkingDirectory = \"NO\"\n" +
+            "      ignoresPersistentStateOnLaunch = \"NO\"\n" +
+            "      debugDocumentVersioning = \"YES\"\n" +
+            "      debugServiceExtension = \"internal\"\n" +
+            "      allowLocationSimulation = \"YES\">\n" +
+            "      <PathRunnable\n" +
+            "         runnableDebuggingMode = \"0\"\n" +
+            "         FilePath = \"" + executablePath + "\">\n" +
+            "      </PathRunnable>\n" +
+            "      <AdditionalOptions>\n" +
+            "      </AdditionalOptions>\n" +
+            "   </LaunchAction>\n" +
+            "   <ProfileAction\n" +
+            "      buildConfiguration = \"Debug\"\n" +
+            "      shouldUseLaunchSchemeArgsEnv = \"YES\"\n" +
+            "      savedToolIdentifier = \"\"\n" +
+            "      useCustomWorkingDirectory = \"NO\"\n" +
+            "      debugDocumentVersioning = \"YES\">\n" +
+            "   </ProfileAction>\n" +
+            "   <AnalyzeAction\n" +
+            "      buildConfiguration = \"Debug\">\n" +
+            "   </AnalyzeAction>\n" +
+            "   <ArchiveAction\n" +
+            "      buildConfiguration = \"Debug\"\n" +
+            "      revealArchiveInOrganizer = \"YES\">\n" +
+            "   </ArchiveAction>\n" +
+            "</Scheme>";
+    }
+
+    private String targetXcshemeContent(String targetName, String id, String projectFilename, String executablePath) {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            "<Scheme\n" +
+            "   LastUpgradeVersion = \"0830\"\n" +
+            "   version = \"1.3\">\n" +
+            "   <BuildAction\n" +
+            "      parallelizeBuildables = \"YES\"\n" +
+            "      buildImplicitDependencies = \"YES\">\n" +
+            "      <BuildActionEntries>\n" +
+            "         <BuildActionEntry\n" +
+            "            buildForTesting = \"YES\"\n" +
+            "            buildForRunning = \"YES\"\n" +
+            "            buildForProfiling = \"YES\"\n" +
+            "            buildForArchiving = \"YES\"\n" +
+            "            buildForAnalyzing = \"YES\">\n" +
+            "            <BuildableReference\n" +
+            "               BuildableIdentifier = \"primary\"\n" +
+            "               BlueprintIdentifier = \"" + id + "\"\n" +
+            "               BuildableName = \"" + targetName + "\"\n" +
+            "               BlueprintName = \"" + targetName + "\"\n" +
+            "               ReferencedContainer = \"container:" + projectFilename + "\">\n" +
+            "            </BuildableReference>\n" +
+            "         </BuildActionEntry>\n" +
+            "      </BuildActionEntries>\n" +
+            "   </BuildAction>\n" +
+            "   <TestAction\n" +
+            "      buildConfiguration = \"Debug\"\n" +
+            "      selectedDebuggerIdentifier = \"Xcode.DebuggerFoundation.Debugger.LLDB\"\n" +
+            "      selectedLauncherIdentifier = \"Xcode.DebuggerFoundation.Launcher.LLDB\"\n" +
+            "      shouldUseLaunchSchemeArgsEnv = \"YES\">\n" +
+            "      <Testables>\n" +
+            "      </Testables>\n" +
+            "      <AdditionalOptions>\n" +
+            "      </AdditionalOptions>\n" +
+            "   </TestAction>\n" +
+            "   <LaunchAction\n" +
+            "      buildConfiguration = \"Debug\"\n" +
+            "      selectedDebuggerIdentifier = \"Xcode.DebuggerFoundation.Debugger.LLDB\"\n" +
+            "      selectedLauncherIdentifier = \"Xcode.DebuggerFoundation.Launcher.LLDB\"\n" +
+            "      launchStyle = \"0\"\n" +
+            "      useCustomWorkingDirectory = \"NO\"\n" +
+            "      ignoresPersistentStateOnLaunch = \"NO\"\n" +
+            "      debugDocumentVersioning = \"YES\"\n" +
+            "      debugServiceExtension = \"internal\"\n" +
+            "      allowLocationSimulation = \"YES\">\n" +
+            "      <PathRunnable\n" +
+            "         runnableDebuggingMode = \"0\"\n" +
+            "         FilePath = \"" + executablePath + "\">\n" +
+            "      </PathRunnable>\n" +
+            "      <MacroExpansion>\n" +
+            "         <BuildableReference\n" +
+            "            BuildableIdentifier = \"primary\"\n" +
+            "            BlueprintIdentifier = \"" + id + "\"\n" +
+            "            BuildableName = \"" + targetName + "\"\n" +
+            "            BlueprintName = \"" + targetName + "\"\n" +
+            "            ReferencedContainer = \"container:" + projectFilename + "\">\n" +
+            "         </BuildableReference>\n" +
+            "      </MacroExpansion>\n" +
+            "      <AdditionalOptions>\n" +
+            "      </AdditionalOptions>\n" +
+            "   </LaunchAction>\n" +
+            "   <ProfileAction\n" +
+            "      buildConfiguration = \"Debug\"\n" +
+            "      shouldUseLaunchSchemeArgsEnv = \"YES\"\n" +
+            "      savedToolIdentifier = \"\"\n" +
+            "      useCustomWorkingDirectory = \"NO\"\n" +
+            "      debugDocumentVersioning = \"YES\">\n" +
+            "      <MacroExpansion>\n" +
+            "         <BuildableReference\n" +
+            "            BuildableIdentifier = \"primary\"\n" +
+            "            BlueprintIdentifier = \"" + id + "\"\n" +
+            "            BuildableName = \"" + targetName + "\"\n" +
+            "            BlueprintName = \"" + targetName + "\"\n" +
+            "            ReferencedContainer = \"container:" + projectFilename + "\">\n" +
+            "         </BuildableReference>\n" +
+            "      </MacroExpansion>\n" +
+            "   </ProfileAction>\n" +
+            "   <AnalyzeAction\n" +
+            "      buildConfiguration = \"Debug\">\n" +
+            "   </AnalyzeAction>\n" +
+            "   <ArchiveAction\n" +
+            "      buildConfiguration = \"Debug\"\n" +
+            "      revealArchiveInOrganizer = \"YES\">\n" +
+            "   </ArchiveAction>\n" +
+            "</Scheme>";
     }
 
     /**
@@ -109,21 +409,37 @@ public class GenerateXcodeProjectFileTask extends DefaultTask {
      * @param name name of the component (project)
      * @param productName the baseName of a component
      * @param taskName should be the lifecycle task of the binary to build
-     * @param path For testing only!
      * @return
      */
-    private PBXNativeTarget createTarget(String name, String productName, String taskName, String path) {
-        String productFilename = getProject().file(path + productName).getAbsolutePath();
+    private PBXLegacyTarget createTarget(String name, String productName, String taskName) {
+        PBXLegacyTarget target = new PBXLegacyTarget(name, PBXTarget.ProductType.TOOL);
+        target.setProductName(productName);
+        NSDictionary buildSettings = new NSDictionary();
+        target.getBuildConfigurationList().getBuildConfigurationsByName().getUnchecked("Debug").setBuildSettings(buildSettings);
+
+        if (getProject().file("gradlew").exists()) {
+            target.setBuildToolPath(getProject().file("gradlew").getAbsolutePath());
+        } else {
+            // TODO - default to gradle on the path (or should we generate an error if no gradle is in the path?)
+            target.setBuildToolPath("/Users/daniel/gradle/gradle-source-build/bin/gradle");
+        }
+        target.setBuildArgumentsString(taskName);
+
+        return target;
+    }
+
+    private PBXNativeTarget createIndexingTarget(String name, String productName, List<PBXReference> fileReferences) {
+        PBXSourcesBuildPhase p = new PBXSourcesBuildPhase();
+        for (PBXReference fileReference : fileReferences) {
+            p.getFiles().add(new PBXBuildFile(fileReference));
+        }
 
         PBXNativeTarget target = new PBXNativeTarget(name, PBXTarget.ProductType.TOOL);
-        target.setProductName(productName);
-        target.setProductReference(new PBXFileReference(productName, productFilename, PBXReference.SourceTree.ABSOLUTE));
         NSDictionary buildSettings = new NSDictionary();
-        // TODO - Should we redirect all intermediate files from xcode to folder inside the build tree (so we can clean it instead of relying on XCode)
-        buildSettings.put("CONFIGURATION_BUILD_DIR", getProject().file(path).getAbsolutePath()); // Point output to the right directory
+        buildSettings.put("SWIFT_VERSION", "3.0");  // TODO - Choose the right version for swift
         buildSettings.put("PRODUCT_NAME", productName);  // Mandatory
         target.getBuildConfigurationList().getBuildConfigurationsByName().getUnchecked("Debug").setBuildSettings(buildSettings);
-        target.getBuildPhases().add(createBuildPhase(taskName));
+        target.getBuildPhases().add(p);
 
         return target;
     }
